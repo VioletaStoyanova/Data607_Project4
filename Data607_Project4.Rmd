@@ -1,0 +1,209 @@
+---
+title: "Data607_Project4"
+author: "Violeta Stoyanova"
+date: "4/17/2018"
+output: html_document
+---
+##Spam or Ham
+It can be useful to be able to classify new "test" documents using already classified "training" documents.  A common example is using a corpus of labeled spam and ham (non-spam) e-mails to predict whether or not a new document is spam.  
+
+For this project, you can start with a spam/ham dataset, then predict the class of new documents (either withheld from the training dataset or from another source such as your own spam folder).   One example corpus:  https://spamassassin.apache.org/publiccorpus/
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#removes all objects from the current workspace (R memory)
+rm(list=ls())
+# Load the libraries at once
+
+libraries <- c("RCurl",
+              "DT",
+              "dplyr",
+              "tidyr",
+              "wordcloud",
+              "ggplot2",
+              "data.table",
+              "RMySQL",
+              "tidyverse",
+              "stringr",
+              "ggplot2",
+              "wordcloud",
+              "tm",  #text mining https://cran.r-project.org/web/packages/tm/vignettes/tm.pdf
+              "RTextTools",
+              "naivebayes"
+              )
+
+lapply(libraries, require, character.only = TRUE)
+```
+
+```{r}
+#Setting the working directory and unzipping the files
+
+wdir <- getwd()
+
+# Set the File URL
+if (!dir.exists("easy_ham")){
+  download.file(url = "http://spamassassin.apache.org/old/publiccorpus/20021010_easy_ham.tar.bz2",
+                destfile = "20021010_easy_ham.tar.bz2")
+    
+    untar("20021010_easy_ham.tar.bz2",compressed = "bzip2")
+}
+
+ham.files = list.files(path = "easy_ham",full.names = TRUE)
+
+if (!dir.exists("spam_2")){
+  download.file(url = "http://spamassassin.apache.org/old/publiccorpus/20050311_spam_2.tar.bz2",
+                destfile = "20050311_spam_2.tar.bz2")
+    untar("20050311_spam_2.tar.bz2", compressed = "bzip2")
+    }
+
+spam.files = list.files(path = "spam_2", full.names = TRUE)
+
+```
+
+```{r}
+# Read the Directory and get list of file names 
+dir <- paste(wdir,"easy_ham",sep="/")
+ham.File.Names = list.files(dir)
+ham.File.Path <- paste(dir, ham.File.Names, sep="/")
+
+ham.body.df <- c()
+
+# Read all files in a DF
+for (i in ham.File.Path){
+    #con <- file(i, open='r')
+    text <- readLines(i)
+    ham.body<- list(paste(text, collapse="\n"))
+    ham.body.df = c(ham.body.df,ham.body)
+}
+
+
+ham.df <- c()
+ham.df <- as.data.frame(unlist(ham.body.df))
+names(ham.df) <- c("body")
+ham.df$filename <- unlist(ham.File.Names)
+ham.df$type <- "ham"
+```
+
+#Ham and Spam into data frames 
+```{r}
+dir <- paste(wdir,"spam_2",sep="/")
+spam.File.Names = list.files(dir)
+spam.File.Path <- paste(dir,spam.File.Names,sep="/")
+
+
+spam.body.df <- c()
+
+# Read all files in a DF
+for (i in spam.File.Path){
+    #con <- file(i, open='r')
+    text <- readLines(i)
+    spam.body<- list(paste(text, collapse="\n"))
+    spam.body.df = c(spam.body.df,spam.body)
+}
+
+# 
+spam.df <- c()
+spam.df <- as.data.frame(unlist(spam.body.df))
+names(spam.df) <- c("body")
+spam.df$filename <- unlist(spam.File.Names)
+
+spam.df$type <- "spam"
+#Merge the ham and spam dfs
+spam.ham.df <- rbind(spam.df, ham.df)
+
+
+```
+
+```{r}
+control <- list(stopwords=TRUE, removePunctuation=TRUE,removeNumbers=TRUE, minDocFreq=2)
+```
+#Create Spam and Ham Corpus
+Including WordLists in the form of Term Document and Document Term matrices
+```{r}
+spam_corpus <- Corpus(VectorSource(spam.df))
+spam_tdm <- TermDocumentMatrix(spam_corpus,control)
+spam_dtm <- DocumentTermMatrix(spam_corpus, control)
+#remove sparse items
+spam_tdm2<-removeSparseTerms(spam_tdm,0.8)
+
+ham_corpus <- Corpus(VectorSource(ham.df))
+ham_tdm <- TermDocumentMatrix(ham_corpus,control)
+ham_dtm <- DocumentTermMatrix(ham_corpus, control)
+#remove sparse items
+ham_tdm2<-removeSparseTerms(ham_tdm,0.8)
+```
+#Visualize the Spam and Ham Corpuses
+```{r}
+wordcloud(ham_corpus, min.freq=600)
+```
+
+```{r}
+wordcloud(spam_corpus,min.freq = 600)
+```
+
+#Split into Training and Test Sets
+
+```{r}
+
+set.seed(123)
+train.size <- floor(0.70 * nrow(spam.ham.df))
+train.size
+```
+```{r}
+train.Index <- sample(seq_len(nrow(spam.ham.df)), size = train.size)
+
+train.Spam.Ham <- spam.ham.df[train.Index, ]
+test.Spam.Ham <- spam.ham.df[-train.Index, ]
+
+# count of spam and ham in train data set
+spam<-subset(train.Spam.Ham,train.Spam.Ham$type == "spam")
+ham<-subset(train.Spam.Ham,train.Spam.Ham$type == "ham")
+
+```
+
+
+
+```{r}
+pc <- proc.time()
+#Create a Naive Bayes classifier object
+naivebayes_model <- naive_bayes(train.Spam.Ham, factor(train.Spam.Ham$type))
+
+proc.time() - pc
+```
+
+```{r}
+summary(naivebayes_model)
+```
+#Evaluation of Naive Bayes
+
+```{r}
+#Evaluate the performance on the test data
+#naivebayes_predict <- predict(naivebayes_model, newdata=test.Spam.Ham)
+
+#Check the predictions against reality
+#table(`Actual Class` = test.Spam.Ham$class, `Predicted Class` = naivebayes_predict)
+
+
+```
+Unfortunately my code didn't work when I tried to evaluate the Naive Bayes. 
+
+
+```{r}
+#naivebayes_error <- sum(test_data$class != naivebayes_predict)/nrow(test_data)
+#print(paste0("Accuary (Precision): ", 1 - naivebayes_error))
+```
+
+
+```{r}
+table(train.Spam.Ham$type)
+```
+
+```{r}
+table(test.Spam.Ham$type)
+
+```
+
+
+```{r}
+
+```
+
